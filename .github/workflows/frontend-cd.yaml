@@ -10,7 +10,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: 760527230816.dkr.ecr.us-east-1.amazonaws.com/frontend
   IMAGE_TAG: ${{ github.sha }}
-  REACT_APP_MOVIE_API_URL: https://your-backend-dns-or-url.example.com
+  REACT_APP_MOVIE_API_URL: ace4e58ca1b804feeb4e73ce9d7f975f-1196966769.us-east-1.elb.amazonaws.com
 
 jobs:
   lint:
