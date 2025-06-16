@@ -39,7 +39,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.10'
       - name: Install pipenv
         run: pip install pipenv
       - name: Install dependencies (pipenv)
@@ -54,6 +54,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install pipenv
+        run: pip install pipenv
+
+      - name: Install dependencies
+        run: pipenv install --deploy --ignore-pipfile
+        working-directory: starter/backend
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
