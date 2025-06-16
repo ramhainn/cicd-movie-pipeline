@@ -5,91 +5,88 @@ on:
     branches:
       - main
     paths:
-      - 'starter/backend/**'
-  workflow_dispatch:
+      - 'starter/backend/**'    
+  workflow_dispatch:            # Allow manual trigger
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+  ECR_REPOSITORY: backend
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'  # adjust your Python version
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install flake8 pytest  # or install from your requirements.txt if you have one
-      
-      - name: Run lint
-        run: flake8 starter/backend
+          python-version: '3.9'
+      - name: Install pipenv
+        run: pip install pipenv
+      - name: Install dependencies (pipenv)
+        working-directory: starter/backend
+        run: pipenv install --deploy --ignore-pipfile
+      - name: Run flake8 lint
+        working-directory: starter/backend
+        run: pipenv run flake8 .
 
   test:
     runs-on: ubuntu-latest
+    needs: lint
     steps:
       - uses: actions/checkout@v3
-      
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'  # adjust
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pytest  # or requirements.txt if exists
-      
-      - name: Run tests
-        run: pytest starter/backend/tests  # adjust to your test folder
-
-  build:
-    needs: [lint, test]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Build Docker image
+          python-version: '3.9'
+      - name: Install pipenv
+        run: pip install pipenv
+      - name: Install dependencies (pipenv)
         working-directory: starter/backend
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-          REGISTRY: your-docker-registry-url
-          IMAGE_NAME: your-backend-image-name
-        run: |
-          docker build -t $REGISTRY/$IMAGE_NAME:$IMAGE_TAG .
-          echo "Docker image built: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
-          
-      # Optional: Push the image to registry
-      - name: Log in to Docker registry
-        uses: docker/login-action@v2
-        with:
-          registry: your-docker-registry-url
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+        run: pipenv install --deploy --ignore-pipfile
+      - name: Run tests
+        working-directory: starter/backend
+        run: pipenv run pytest tests
 
-      - name: Push Docker image
-        run: docker push $REGISTRY/$IMAGE_NAME:$IMAGE_TAG
-
-  deploy:
-    needs: build
+  build-and-deploy:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup kubectl
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+
+      - name: Build Docker image
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG starter/backend
+
+      - name: Push Docker image to ECR
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+
+      - name: Set up kubectl
         uses: azure/setup-kubectl@v3
         with:
           version: 'latest'
 
-      - name: Configure kubeconfig
+      - name: Update Kubernetes manifest image tag and deploy
         run: |
-          echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig.yaml
-          export KUBECONFIG=$(pwd)/kubeconfig.yaml
+          IMAGE_TAG=${{ github.sha }}
+          # Replace image tag in your manifest(s)
+          sed -i "s|image: .*|image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG|g" ./k8s/backend-deployment.yaml
+          kubectl apply -f ./k8s/backend-deployment.yaml
 
-      - name: Deploy to Kubernetes
-        run: |
-          # Update the image tag in your Kubernetes deployment manifest
-          sed -i "s|image: your-docker-registry-url/your-backend-image-name:.*|image: your-docker-registry-url/your-backend-image-name:${{ github.sha }}|" ./k8s/deployment.yaml
-          kubectl apply -f ./k8s/
+      - name: Verify deployment rollout
+        run: kubectl rollout status deployment/backend-deployment
