@@ -1,11 +1,11 @@
-name: Continuous Integration
+name: Backend Continuous Integration
 
 on:
   pull_request:
     branches:
       - main
     paths:
-      - 'starter/frontend/**'
+      - 'starter/backend/**'
   workflow_dispatch:
 
 jobs:
@@ -18,9 +18,9 @@ jobs:
         with:
           node-version: 18
       - name: Install dependencies
-        run: cd starter/frontend && npm ci
+        run: cd starter/backend && npm ci
       - name: Run lint
-        run: cd starter/frontend && npm run lint
+        run: cd starter/backend && npm run lint
 
   test:
     runs-on: ubuntu-latest
@@ -31,9 +31,9 @@ jobs:
         with:
           node-version: 18
       - name: Install dependencies
-        run: cd starter/frontend && npm ci
+        run: cd starter/backend && npm ci
       - name: Run tests
-        run: cd starter/frontend && npm test
+        run: cd starter/backend && npm test
 
   build:
     needs: [lint, test]
