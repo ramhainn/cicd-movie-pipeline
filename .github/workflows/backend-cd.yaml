@@ -107,4 +107,4 @@ jobs:
           kubectl apply -f starter/backend/k8s/deployment.yaml
 
       - name: Verify deployment rollout
-        run: kubectl rollout status deployment/backend -n backend
+        run: kubectl rollout status deployment/backend 
