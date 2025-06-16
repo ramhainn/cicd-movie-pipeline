@@ -103,7 +103,14 @@ jobs:
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name cluster
 
+      - name: Update image in deployment.yaml
+        run: |
+          sed -i "s|image: .*|image: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}|g" starter/frontend/k8s/deployment.yaml
+          echo "Updated deployment.yaml:"
+          cat starter/frontend/k8s/deployment.yaml
+
       - name: Deploy to EKS using kubectl
         run: |
           kubectl apply -f ./starter/frontend/k8s/deployment.yaml
           kubectl rollout status deployment/frontend
+
