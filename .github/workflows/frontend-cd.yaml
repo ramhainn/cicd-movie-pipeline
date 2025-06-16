@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'frontend/**'
+      - 'starter/frontend/**'
       - '.github/workflows/frontend-cd.yaml'
 
 jobs:
