@@ -28,11 +28,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-        working-directory: ./starter/frontend
+        working-directory: starter/frontend
 
       - name: Run linter
         run: npm run lint
-        working-directory: ./starter/frontend
+        working-directory: starter/frontend
 
   test:
     name: Run Tests
@@ -51,16 +51,18 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-node-${{ hashFiles('starter/frontend/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
 
       - name: Install dependencies
         run: npm ci
-
+        working-directory: starter/frontend
+        
       - name: Run tests
         run: npm test
-
+        working-directory: starter/frontend
+        
   build:
     name: Build App
     runs-on: ubuntu-latest
@@ -79,17 +81,17 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-node-${{ hashFiles('starter/frontend/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
 
       - name: Install dependencies
         run: npm ci
-        working-directory: ./starter/frontend
+        working-directory: starter/frontend
 
       - name: Run tests
         run: npm test
-        working-directory: ./starter/frontend
+        working-directory: starter/frontend
         
       - name: Build Docker image
         run: docker build -t frontend-app .
