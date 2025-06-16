@@ -101,9 +101,9 @@ jobs:
 
       - name: Update kubeconfig for EKS
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name your-eks-cluster-name
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name cluster
 
       - name: Deploy to EKS using kubectl
         run: |
-          kubectl apply -f ./k8s/frontend-deployment.yaml
+          kubectl apply -f ./starter/frontend/k8s/deployment.yaml
           kubectl rollout status deployment/frontend
