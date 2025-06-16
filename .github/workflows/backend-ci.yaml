@@ -9,25 +9,23 @@ on:
   workflow_dispatch:
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-
-      - name: Install dependencies
-        run: |
-          cd starter/backend
-          pip install -r requirements.txt
-
-      - name: Run lint
-        run: |
-          cd starter/backend
-          flake8 .
+  steps:
+    - uses: actions/checkout@v3
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    - name: Install pipenv
+      run: pip install pipenv
+    - name: Install dependencies (pipenv)
+      working-directory: starter/backend
+      run: pipenv install --deploy --ignore-pipfile
+    - name: Install flake8
+      run: pipenv run pip install flake8
+      working-directory: starter/backend
+    - name: Run flake8 lint
+      working-directory: starter/backend
+      run: pipenv run flake8 .
 
   test:
     runs-on: ubuntu-latest
@@ -47,8 +45,7 @@ jobs:
       - name: Run tests
         run: |
           cd starter/backend
-          # Replace this with your actual test command, e.g., pytest
-          pytest
+          run: pipenv run pytest test_app.py
 
   build:
     needs: [lint, test]
