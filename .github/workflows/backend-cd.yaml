@@ -18,29 +18,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          node-version: 18
+          python-version: '3.10'
       - name: Install dependencies and lint
         run: |
-          cd starter/backend
-          npm ci
-          npm run lint
+          python -m venv venv
+          source venv/bin/activate
+          pip install flake8
+          flake8 starter/backend
 
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          node-version: 18
+          python-version: '3.10'
       - name: Install dependencies and run tests
         run: |
-          cd starter/backend
-          npm ci
-          npm test
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r starter/backend/requirements.txt
+          pip install pytest
+          pytest starter/backend/tests
 
   build-and-deploy:
     needs: [lint, test]
