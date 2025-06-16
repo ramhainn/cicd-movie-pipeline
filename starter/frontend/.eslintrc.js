@@ -24,12 +24,13 @@ module.exports = {
     'prettier/prettier': [
       'error',
       {
-        singleQuote: false,
+        singleQuote: true,
         jsxSingleQuote: false,
         printWidth: 120,
         parser: 'babel-ts',
       },
     ],
+    // Customize your rules here
     'react/prop-types': process.env.FAIL_LINT ? 2 : 0,
     'react/jsx-uses-vars': 'warn',
   },
