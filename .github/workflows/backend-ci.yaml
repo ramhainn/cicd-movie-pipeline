@@ -9,19 +9,21 @@ on:
   workflow_dispatch:
 
 jobs:
- jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.x'
+
       - name: Install dependencies
         run: |
           cd starter/backend
           pip install -r requirements.txt
+
       - name: Run lint
         run: |
           cd starter/backend
@@ -32,29 +34,29 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.x'
 
-      - name: Install pipenv
-        run: pip install pipenv
-
-      - name: Install backend dependencies
+      - name: Install dependencies
         run: |
           cd starter/backend
-          pipenv install --deploy --ignore-pipfile
+          pip install -r requirements.txt
 
       - name: Run tests
         run: |
           cd starter/backend
-          pipenv run pytest   # or the test command your backend uses
+          # Replace this with your actual test command, e.g., pytest
+          pytest
 
   build:
     needs: [lint, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Build backend Docker image
         working-directory: starter/backend
-        run: docker build -t backend-image:latest .
+        run: |
+          docker build -t backend-image:latest .
