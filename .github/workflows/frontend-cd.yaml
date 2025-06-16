@@ -60,7 +60,7 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker tag frontend-app:latest frontend:${{ github.sha }}
+          docker tag frontend:latest frontend:${{ github.sha }}
           
       - name: Login to AWS ECR
         uses: aws-actions/amazon-ecr-login@v1
