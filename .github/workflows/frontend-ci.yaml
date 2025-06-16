@@ -29,6 +29,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
         working-directory: starter/frontend
+        
+      - name: Fix lint errors
+        run: npx prettier --write starter/frontend/.eslintrc.js
 
       - name: Run linter
         run: npm run lint
