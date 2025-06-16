@@ -9,9 +9,10 @@ spec:
     app: backend
   ports:
     - protocol: TCP
-      port: 5000        # Port exposed inside the cluster
-      targetPort: 5000  # Port your container listens on
-  type: ClusterIP      # Internal only, default type
+      port: 5000
+      targetPort: 5000
+  type: LoadBalancer    # Provision cloud LB (ELB on AWS)
+
 # apiVersion: v1
 # kind: Service
 # metadata:
