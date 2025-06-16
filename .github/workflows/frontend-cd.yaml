@@ -1,228 +1,118 @@
 name: Frontend Continuous Deployment
+
 on:
-  workflow_dispatch:
   push:
     branches:
-        - main
-    paths:
-      - 'starter/frontend/**'
-    
+      - main
+  workflow_dispatch:
+
 env:
-  NODE_VERSION: '18.x'
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/frontend
+  IMAGE_TAG: ${{ github.sha }}
+  #REACT_APP_MOVIE_API_URL: http://ace4e58ca1b804feeb4e73ce9d7f975f-1196966769.us-east-1.elb.amazonaws.com
 
 jobs:
   lint:
     runs-on: ubuntu-latest
-    defaults:
-        run:
-          working-directory: starter/frontend
-
+    outputs:
+      lint-status: ${{ steps.lint.outcome }}
     steps:
-    - name: Check out repository
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Use Node.js 
-      uses: actions/setup-node@v3
-      with:
-        node-version: ${{env.NODE_VERSION}}
-        cache: 'npm'
-        cache-dependency-path: "starter/frontend/package-lock.json"
-        
-    - name: Lint
-      run: | 
-        npm ci
-        npm run lint
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: ./starter/frontend
+
+      - name: Run lint
+        id: lint
+        run: npm run lint
+        working-directory: ./starter/frontend
 
   test:
     runs-on: ubuntu-latest
-    defaults:
-        run:
-          working-directory: starter/frontend
-
+    needs: lint
+    outputs:
+      test-status: ${{ steps.test.outcome }}
     steps:
-    - name: Check out repository
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Use Node.js 
-      uses: actions/setup-node@v3
-      with:
-        node-version: ${{env.NODE_VERSION}}
-        cache: 'npm'
-        cache-dependency-path: "starter/frontend/package-lock.json"
-        
-    - name: Test
-      run: | 
-        npm ci
-        npm run test 
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: ./starter/frontend
+
+      - name: Run tests 
+        id: test
+        run: npm test -- --ci --reporters=default
+        working-directory: ./starter/frontend
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: needs.lint.result == 'success' && needs.test.result == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          region: ${{ env.AWS_REGION }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Build Docker image
+        run: |
+          docker build \
+           --build-arg REACT_APP_MOVIE_API_URL=http://a3f13c382c53844bd8a7ada8b16bb9b2-403003771.us-east-1.elb.amazonaws.com  \
+           -t ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
+           ./starter/frontend
+
+
+      - name: Push Docker image to Amazon ECR
+        run: |
+          docker push ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
 
   deploy:
     runs-on: ubuntu-latest
-    needs:
-      - lint
-      - test
+    needs: build-and-push
     steps:
-      - name: Check out repository
+      - name: Checkout code
         uses: actions/checkout@v3
+   
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Configure kubectl
+      - name: Update kubeconfig for EKS
         run: |
-          aws eks update-kubeconfig --name cluster --region us-east-1
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name cluster
 
-      - name: Display application URLs
-        id: get_be_service_url
+      - name: Update image in deployment.yaml
         run: |
-          cd starter/frontend/k8s
-          kubectl get svc -A
-          BE_SERVICE_URL=$(kubectl get svc backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-          echo "BE_SERVICE_URL=${BE_SERVICE_URL}"
-          echo "::set-output name=be_service_url::${BE_SERVICE_URL}"
+          sed -i "s|image: .*|image: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}|g" starter/frontend/k8s/deployment.yaml
+          echo "Updated deployment.yaml:"
+          cat starter/frontend/k8s/deployment.yaml
 
-      - name: Build, tag, and push image to Amazon ECR
-        working-directory: starter/frontend
+      - name: Deploy to EKS using kubectl
         run: |
-          echo "Using BE_SERVICE_URL=${{ steps.get_be_service_url.outputs.be_service_url }}"
-          docker build --build-arg=REACT_APP_MOVIE_API_URL=http://${{ steps.get_be_service_url.outputs.be_service_url }} --tag=frontend:${GITHUB_SHA} .
-          docker tag frontend:${GITHUB_SHA} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/frontend:${GITHUB_SHA}
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/frontend:${GITHUB_SHA}
-
-      - name: Set image tag and apply to cluster
-        run: |
-          cd starter/frontend/k8s
-          kustomize edit set image frontend=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/frontend:${GITHUB_SHA}
-          kustomize build | kubectl apply -f -
-      - name: Display application URLs        
-        run: |
-          cd starter/frontend/k8s
-          kubectl get svc -A
-
-
-
-# name: Frontend Continuous Deployment
-
-# on:
-#   push:
-#     branches:
-#       - main
-#   workflow_dispatch:
-
-# env:
-#   AWS_REGION: us-east-1
-#   ECR_REPOSITORY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/frontend
-#   IMAGE_TAG: ${{ github.sha }}
-#   #REACT_APP_MOVIE_API_URL: http://ace4e58ca1b804feeb4e73ce9d7f975f-1196966769.us-east-1.elb.amazonaws.com
-
-# jobs:
-#   lint:
-#     runs-on: ubuntu-latest
-#     outputs:
-#       lint-status: ${{ steps.lint.outcome }}
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
-
-#       - name: Setup Node.js
-#         uses: actions/setup-node@v3
-#         with:
-#           node-version: 18
-
-#       - name: Install dependencies
-#         run: npm install
-#         working-directory: ./starter/frontend
-
-#       - name: Run lint
-#         id: lint
-#         run: npm run lint
-#         working-directory: ./starter/frontend
-
-#   test:
-#     runs-on: ubuntu-latest
-#     needs: lint
-#     outputs:
-#       test-status: ${{ steps.test.outcome }}
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
-
-#       - name: Setup Node.js
-#         uses: actions/setup-node@v3
-#         with:
-#           node-version: 18
-
-#       - name: Install dependencies
-#         run: npm install
-#         working-directory: ./starter/frontend
-
-#       - name: Run tests 
-#         id: test
-#         run: npm test -- --ci --reporters=default
-#         working-directory: ./starter/frontend
-
-#   build-and-push:
-#     runs-on: ubuntu-latest
-#     needs: [lint, test]
-#     if: needs.lint.result == 'success' && needs.test.result == 'success'
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
-
-#       - name: Log in to Amazon ECR
-#         uses: aws-actions/amazon-ecr-login@v1
-#         with:
-#           region: ${{ env.AWS_REGION }}
-#         env:
-#           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-#       - name: Build Docker image
-#         run: |
-#           docker build \
-#            --build-arg REACT_APP_MOVIE_API_URL=http://ace4e58ca1b804feeb4e73ce9d7f975f-1196966769.us-east-1.elb.amazonaws.com \
-#            -t ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
-#            ./starter/frontend
-
-
-#       - name: Push Docker image to Amazon ECR
-#         run: |
-#           docker push ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-
-#   deploy:
-#     runs-on: ubuntu-latest
-#     needs: build-and-push
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
-   
-
-      # - name: Configure AWS credentials
-      #   uses: aws-actions/configure-aws-credentials@v2
-      #   with:
-      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      #     aws-region: ${{ env.AWS_REGION }}
-
-      # - name: Update kubeconfig for EKS
-      #   run: |
-      #     aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name cluster
-
-      # - name: Update image in deployment.yaml
-      #   run: |
-      #     sed -i "s|image: .*|image: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}|g" starter/frontend/k8s/deployment.yaml
-      #     echo "Updated deployment.yaml:"
-      #     cat starter/frontend/k8s/deployment.yaml
-
-      # - name: Deploy to EKS using kubectl
-      #   run: |
-      #     kubectl apply -f ./starter/frontend/k8s/deployment.yaml
-      #     kubectl rollout status deployment/frontend
+          kubectl apply -f ./starter/frontend/k8s/deployment.yaml
+          kubectl rollout status deployment/frontend
 
