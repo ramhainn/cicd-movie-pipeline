@@ -83,14 +83,14 @@ jobs:
           aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
 
       - name: Build Docker image
-        env:
-          ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest starter/backend
-          
+          IMAGE_TAG=${{ github.sha }}
+          docker build -t ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG starter/backend
+
       - name: Push Docker image to ECR
         run: |
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          IMAGE_TAG=${{ github.sha }}
+          docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v3
