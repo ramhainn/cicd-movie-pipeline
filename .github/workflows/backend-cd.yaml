@@ -9,10 +9,9 @@ on:
   workflow_dispatch:
 
 env:
-  AWS_REGION: us-east-1
-  EKS_CLUSTER_NAME: cluster
-  DOCKER_REGISTRY: 760527230816.dkr.ecr.us-east-1.amazonaws.com
-  DOCKER_IMAGE_NAME: backend
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
 
 jobs:
   lint:
@@ -23,10 +22,11 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-      - name: Install dependencies
-        run: cd starter/frontend && npm ci
-      - name: Run lint
-        run: cd starter/frontend && npm run lint
+      - name: Install dependencies and lint
+        run: |
+          cd starter/backend
+          npm ci
+          npm run lint
 
   test:
     runs-on: ubuntu-latest
@@ -36,42 +36,43 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-      - name: Install dependencies
-        run: cd starter/frontend && npm ci
-      - name: Run tests
-        run: cd starter/frontend && npm test
+      - name: Install dependencies and run tests
+        run: |
+          cd starter/backend
+          npm ci
+          npm test
 
-  build:
+  build-and-deploy:
     needs: [lint, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Login to Docker registry
-        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login ${{ env.DOCKER_REGISTRY }} -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-      - name: Build and tag Docker image
-        run: |
-          IMAGE_TAG=${{ github.sha }}
-          docker build -t ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}:$IMAGE_TAG starter/backend
-          docker push ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}:$IMAGE_TAG
-      - name: Set IMAGE_TAG output
-        id: vars
-        run: echo "::set-output name=tag::${{ github.sha }}"
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          role-session-name: github-actions
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
-      - name: Update deployment image in manifest
+
+      - name: Login to AWS ECR
         run: |
-          sed -i "s|image: .*|image: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}|g" k8s/deployment.yaml
-      - name: Apply Kubernetes manifests
-        run: kubectl apply -f k8s/
+          aws ecr get-login-password --region $AWS_REGION | docker login $ECR_REGISTRY --username AWS --password-stdin
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE_TAG=$ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}
+          docker build -t $IMAGE_TAG starter/backend
+          docker push $IMAGE_TAG
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Deploy to Kubernetes
+        env:
+          IMAGE_TAG: $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}
+        run: |
+          sed -i "s|image:.*|image: $IMAGE_TAG|g" k8s/deployment.yaml
+          kubectl apply -f k8s/deployment.yaml
