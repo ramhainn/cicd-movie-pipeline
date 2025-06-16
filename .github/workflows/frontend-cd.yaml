@@ -4,18 +4,20 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:  # manual trigger
+  workflow_dispatch:
 
 env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: 760527230816.dkr.ecr.us-east-1.amazonaws.com/frontend
   IMAGE_TAG: ${{ github.sha }}
-  ECR_REPOSITORY: your-ecr-repo-name
+  REACT_APP_MOVIE_API_URL: https://your-backend-dns-or-url.example.com
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Install Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
@@ -28,9 +30,10 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    needs: lint
     steps:
       - uses: actions/checkout@v3
-      - name: Install Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
@@ -41,24 +44,51 @@ jobs:
         run: npm test -- --ci --reporters=default --reporters=jest-junit
         working-directory: ./starter/frontend
 
-  build:
+  build-and-push:
     runs-on: ubuntu-latest
-    needs: [lint, test]  # <- build runs only after lint and test succeed
+    needs: test
     steps:
       - uses: actions/checkout@v3
-      
-      - name: Log in to Amazon ECR
+
+      - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
         with:
-          region: us-east-1
+          region: ${{ env.AWS_REGION }}
+        # AWS credentials will be read securely from GitHub Secrets automatically:
+        # Ensure you set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your repo secrets.
 
       - name: Build Docker image
         run: |
           docker build \
-            --build-arg REACT_APP_MOVIE_API_URL=https://your-backend-url.example.com \
+            --build-arg REACT_APP_MOVIE_API_URL=${{ env.REACT_APP_MOVIE_API_URL }} \
             -t ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
             ./starter/frontend
 
       - name: Push Docker image to ECR
         run: |
           docker push ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure kubeconfig
+        run: |
+          aws eks --region ${{ env.AWS_REGION }} update-kubeconfig --name your-eks-cluster-name
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Deploy frontend to EKS
+        run: |
+          kubectl set image deployment/frontend-deployment frontend=${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} --namespace=default
+          kubectl rollout status deployment/frontend-deployment --namespace=default
+        env:
+          KUBECONFIG: ~/.kube/config
